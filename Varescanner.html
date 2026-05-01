@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Modtagekontrol">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxODAgMTgwIj48cmVjdCB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjQwIiBmaWxsPSIjMWExYTFhIi8+PHRleHQgeD0iOTAiIHk9IjEwNSIgZm9udC1zaXplPSI4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2M0YTM1YSI+4pyTPC90ZXh0Pjwvc3ZnPg==">
+<title>Modtagekontrol - GRUMS</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=DM+Serif+Display&display=swap');
+
+:root {
+  --bg: #0a0a0a; --fg: #e8e4df; --accent: #c4a35a; --card: #161616;
+  --border: #2a2a2a; --muted: #777; --danger: #f87171; --success: #4ade80;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f5f2ed; --fg: #1a1a1a; --accent: #8b6914; --card: #fff; --border: #ddd; --muted: #888; }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg); color: var(--fg);
+  min-height: 100vh; min-height: 100dvh;
+  padding: calc(16px + var(--safe-top)) 16px calc(16px + var(--safe-bottom));
+  -webkit-font-smoothing: antialiased;
+}
+h1 { font-family: 'DM Serif Display', serif; font-size: 26px; margin-bottom: 2px; }
+.subtitle { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 14px; }
+.btn {
+  background: var(--accent); color: #0a0a0a; border: none; padding: 14px 24px; border-radius: 10px;
+  font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: opacity .15s; -webkit-appearance: none; text-decoration: none;
+}
+.btn:active { opacity: .7; }
+.btn:disabled { opacity: .35; }
+.btn-outline { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+.btn-green { background: #16a34a; color: white; }
+.btn-sm { padding: 10px 16px; font-size: 13px; margin-top: 10px; }
+
+.upload-zone {
+  border: 2px dashed var(--border); border-radius: 14px; padding: 44px 20px;
+  text-align: center; cursor: pointer; transition: border-color .2s;
+}
+.upload-zone:active { border-color: var(--accent); }
+.upload-zone .icon { font-size: 36px; margin-bottom: 8px; }
+.upload-zone .label { font-weight: 600; font-size: 15px; }
+
+.ingredient-highlight {
+  background: var(--bg); border-radius: 10px; padding: 14px; margin-bottom: 14px;
+}
+.ingredient-highlight .meta { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.ingredient-highlight .name { font-size: 20px; font-weight: 700; }
+.ingredient-highlight .qty { font-size: 14px; color: var(--muted); margin-top: 2px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--border); color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.mono { font-family: 'SF Mono', 'Courier New', monospace; font-size: 12px; }
+
+.pill { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+.pill-done { background: #1a3a1a; color: #4ade80; }
+.pill-wait { background: #3a2a0a; color: var(--accent); }
+.pill-active { background: #0a2a3a; color: #60a5fa; }
+@media (prefers-color-scheme: light) {
+  .pill-done { background: #dcfce7; color: #166534; }
+  .pill-wait { background: #fef3c7; color: #92400e; }
+  .pill-active { background: #dbeafe; color: #1e40af; }
+}
+
+.alert { border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px; }
+.alert-error { background: #3a1a1a; border: 1px solid #6b2020; color: var(--danger); }
+.alert-success { background: #1a3a1a; border: 1px solid #166534; color: var(--success); }
+@media (prefers-color-scheme: light) {
+  .alert-error { background: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
+  .alert-success { background: #dcfce7; border-color: #86efac; color: #166534; }
+}
+
+.info-row { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; font-size: 13px; }
+.info-row span { color: var(--muted); }
+
+.loading { text-align: center; padding: 28px; }
+.spinner {
+  display: inline-block; width: 22px; height: 22px; border: 2.5px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite;
+  vertical-align: middle; margin-right: 8px;
+}
+@keyframes spin { to { transform: rotate(360deg) } }
+
+.preview { max-width: 100%; max-height: 180px; border-radius: 10px; margin-top: 10px; object-fit: contain; display: block; margin-left: auto; margin-right: auto; }
+
+.counter { font-size: 13px; color: var(--muted); }
+.done-icon { font-size: 48px; margin-bottom: 8px; }
+
+input[type="text"], input[type="password"], input[type="number"], select, textarea {
+  width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg); color: var(--fg); font-family: inherit; font-size: 13px; outline: none;
+  -webkit-appearance: none;
+}
+input[type="text"]:focus, input[type="password"]:focus,
+input[type="number"]:focus, select:focus, textarea:focus { border-color: var(--accent); }
+input[type="file"] { display: none; }
+textarea { resize: vertical; min-height: 80px; font-family: 'SF Mono','Courier New',monospace; font-size: 12px; }
+
+.flex-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.flex-row > * { flex: 1; min-width: 120px; }
+
+.lbl { font-size: 12px; color: var(--muted); display: block; margin: 10px 0 4px; }
+.manual-row {
+  display: grid; grid-template-columns: 88px 1fr 64px 34px;
+  gap: 6px; margin-bottom: 6px; align-items: center;
+}
+.manual-row select, .manual-row input { padding: 9px 8px; font-size: 12px; }
+.m-remove {
+  background: transparent; color: var(--danger); border: 1px solid var(--border);
+  border-radius: 8px; cursor: pointer; padding: 6px; font-size: 18px; line-height: 1;
+  height: 100%;
+}
+.divider {
+  text-align: center; color: var(--muted); font-size: 11px; margin: 14px 0;
+  text-transform: uppercase; letter-spacing: 1px;
+}
+.divider::before, .divider::after {
+  content: ""; display: inline-block; width: 30%; height: 1px; background: var(--border);
+  vertical-align: middle; margin: 0 8px;
+}
+</style>
+</head>
+<body>
+
+<div id="app" style="max-width:480px;margin:0 auto;">
+  <h1>Modtagekontrol</h1>
+  <p class="subtitle">GRUMS ApS - helsebixen.dk</p>
+  <div id="alert-box"></div>
+  <div id="view-setup"></div>
+  <div id="view-delivery"></div>
+  <div id="view-manual"></div>
+  <div id="view-labels"></div>
+  <div id="view-done"></div>
+</div>
+
+<script>
+const SHEET_ID = '1FbZBfFw68-4HysGFlvXdJ1Ar8M7Ha3tJD2Pf0lsJ_-o';
+const SCRIPT_URL = 'https://script.google.com/a/macros/grumsaarhus.com/s/AKfycbwhyon4kiKbu0_C3iY15_3Rtc-5-OYNCZccvRmhFYmEgdRuRSVdOZ3wlUHt28ifxeokVg/exec';
+const LS_API_KEY = 'grums_api_key';
+
+let state = {
+  apiKey: localStorage.getItem(LS_API_KEY) || '',
+  deliveryInfo: null,
+  ingredients: [],
+  currentIdx: 0,
+  sheetWritten: false,
+};
+
+function $(id) { return document.getElementById(id); }
+
+function showAlert(msg, type) {
+  $('alert-box').innerHTML = msg ? `<div class="alert alert-${type}">${msg}</div>` : '';
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function todayDDMMYYYY() {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+}
+
+function fileToBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res({ data: r.result.split(',')[1], mediaType: file.type });
+    r.onerror = () => rej(new Error('Read failed'));
+    r.readAsDataURL(file);
+  });
+}
+
+async function callClaude(base64, mediaType, prompt) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': state.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+          { type: 'text', text: prompt }
+        ]
+      }]
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'API fejl: ' + res.status);
+  }
+  const data = await res.json();
+  const raw = data.content?.[0]?.text || '';
+  return raw.replace(/```json|```/g, '').trim();
+}
+
+async function writeToSheet(rows) {
+  const data = encodeURIComponent(JSON.stringify({ rows }));
+  const url = SCRIPT_URL + '?data=' + data;
+
+  debugLog('URL længde: ' + url.length);
+  debugLog('Request URL: ' + url.substring(0, 120) + '...');
+
+  try {
+    debugLog('Sender GET request...');
+    const res = await fetch(url, { redirect: 'follow' });
+    debugLog('Response status: ' + res.status + ' ' + res.statusText);
+    debugLog('Response type: ' + res.type);
+    debugLog('Response URL: ' + res.url);
+    const text = await res.text();
+    debugLog('Response body: ' + text.substring(0, 200));
+    return JSON.parse(text);
+  } catch (err) {
+    debugLog('Fetch fejl: ' + err.name + ': ' + err.message);
+    debugLog('Stack: ' + err.stack);
+
+    // Fallback: prøv via script-tag (JSONP-style)
+    debugLog('Prøver script-tag fallback...');
+    return new Promise((resolve, reject) => {
+      const callbackName = 'sheetCallback_' + Date.now();
+      const scriptUrl = url + '&callback=' + callbackName;
+
+      window[callbackName] = (result) => {
+        debugLog('Script callback modtaget');
+        delete window[callbackName];
+        document.body.removeChild(script);
+        resolve(result);
+      };
+
+      const script = document.createElement('script');
+      script.src = scriptUrl;
+      script.onerror = (e) => {
+        debugLog('Script-tag fejl: ' + JSON.stringify(e));
+        delete window[callbackName];
+        document.body.removeChild(script);
+        reject(new Error('Begge metoder fejlede'));
+      };
+      document.body.appendChild(script);
+
+      setTimeout(() => {
+        if (window[callbackName]) {
+          debugLog('Script timeout efter 15s');
+          delete window[callbackName];
+          try { document.body.removeChild(script); } catch(x) {}
+          reject(new Error('Timeout'));
+        }
+      }, 15000);
+    });
+  }
+}
+
+function debugLog(msg) {
+  console.log('[DEBUG] ' + msg);
+  var box = $('debug-box');
+  if (box) {
+    box.innerHTML += '<div style="border-bottom:1px solid var(--border);padding:4px 0;">' + msg + '</div>';
+    box.scrollTop = box.scrollHeight;
+  }
+}
+
+function hideAll() {
+  ['view-setup','view-delivery','view-manual','view-labels','view-done'].forEach(id => $(id).innerHTML = '');
+  showAlert('', '');
+}
+
+function showSetup() {
+  hideAll();
+  $('view-setup').innerHTML = `
+    <div class="card">
+      <h2 style="font-size:17px;margin-bottom:6px;">Opsætning</h2>
+      <p style="color:var(--muted);font-size:12px;margin-bottom:14px;">
+        Indtast din Anthropic API-nøgle. Den gemmes kun lokalt på denne enhed.
+        Find den på <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--accent);">console.anthropic.com</a>
+      </p>
+      <label class="lbl">API-nøgle:</label>
+      <input type="password" id="api-key-input" placeholder="sk-ant-..." value="${escapeHtml(state.apiKey)}">
+      <button class="btn" style="margin-top:12px;" onclick="saveApiKey()">Gem og fortsæt</button>
+    </div>`;
+}
+
+function saveApiKey() {
+  const key = $('api-key-input').value.trim();
+  if (!key.startsWith('sk-')) {
+    showAlert('API-nøgle skal starte med sk-', 'error');
+    return;
+  }
+  state.apiKey = key;
+  localStorage.setItem(LS_API_KEY, key);
+  showDelivery();
+}
+
+function showDelivery() {
+  hideAll();
+  $('view-delivery').innerHTML = `
+    <div class="card">
+      <h2 style="font-size:17px;margin-bottom:6px;">1. Følgeseddel</h2>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:14px;">Tag et billede af følgesedlen</p>
+      <input type="file" id="file-delivery" accept="image/*" capture="environment" onchange="handleDelivery(this)">
+      <div class="upload-zone" id="delivery-zone" onclick="document.getElementById('file-delivery').click()">
+        <div class="icon">📄</div>
+        <div class="label">Tryk for at tage billede</div>
+      </div>
+      <div class="divider">eller</div>
+      <button class="btn btn-outline" onclick="showManual()">✏️ Indtast manuelt (ingen følgeseddel)</button>
+      <button class="btn btn-outline btn-sm" onclick="showSetup()">Skift API-nøgle</button>
+    </div>`;
+}
+
+async function handleDelivery(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  showAlert('', '');
+  const preview = URL.createObjectURL(file);
+  $('delivery-zone').innerHTML = `<div class="spinner"></div> Analyserer følgeseddel...<img src="${preview}" class="preview">`;
+
+  try {
+    const { data, mediaType } = await fileToBase64(file);
+    const prompt = `Du ser en følgeseddel (delivery note/packing list) for ingredienser eller emballage.
+
+Udtræk følgende som JSON (og kun JSON, ingen markdown):
+{
+  "leverandor": "leverandørens navn",
+  "dato": "modtagelsesdato i format DD/MM/YYYY",
+  "produkter": [
+    {
+      "type": "Råvare eller Emballage",
+      "produkt": "produktnavn/beskrivelse som det står på følgesedlen",
+      "maengde": "antal/mængde som tal"
+    }
+  ]
+}
+
+Regler:
+- "type" skal være enten "Råvare" eller "Emballage" baseret på om det er en ingrediens/råvare eller emballage/pakning.
+- "produkt" skal inkludere den fulde produktbeskrivelse.
+- "maengde" skal kun være tallet, ingen enhed.
+- Inkluder alle linjer fra følgesedlen.`;
+    const parsed = JSON.parse(await callClaude(data, mediaType, prompt));
+    state.deliveryInfo = parsed;
+    state.ingredients = parsed.produkter.map(p => ({ ...p, batchnummer: null, ibn: null }));
+    state.currentIdx = 0;
+    showLabels();
+  } catch (err) {
+    console.error(err);
+    showAlert('Fejl: ' + err.message, 'error');
+    showDelivery();
+  }
+}
+
+// ===== Manuel indtastning =====
+function showManual() {
+  hideAll();
+  $('view-manual').innerHTML = `
+    <div class="card">
+      <h2 style="font-size:17px;margin-bottom:6px;">1. Manuel indtastning</h2>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:6px;">Ingen følgeseddel - skriv hvad der blev modtaget.</p>
+
+      <label class="lbl">Leverandør</label>
+      <input type="text" id="m-leverandor" placeholder="fx Solhjulet ApS" autocomplete="off">
+
+      <label class="lbl">Dato (DD/MM/YYYY)</label>
+      <input type="text" id="m-dato" value="${todayDDMMYYYY()}" autocomplete="off">
+
+      <label class="lbl" style="margin-top:14px;">Produkter</label>
+      <div id="m-products"></div>
+
+      <button class="btn btn-outline btn-sm" onclick="addManualProduct()">+ Tilføj produkt</button>
+
+      <button class="btn" style="margin-top:14px;" onclick="continueManual()">Fortsæt til scanning →</button>
+      <button class="btn btn-outline btn-sm" onclick="showDelivery()">← Tilbage</button>
+    </div>`;
+  addManualProduct();
+}
+
+function addManualProduct() {
+  const wrap = $('m-products');
+  const row = document.createElement('div');
+  row.className = 'manual-row';
+  row.innerHTML = `
+    <select class="m-type">
+      <option value="Råvare">Råvare</option>
+      <option value="Emballage">Emballage</option>
+    </select>
+    <input type="text" class="m-produkt" placeholder="Produktnavn" autocomplete="off">
+    <input type="number" class="m-maengde" placeholder="Antal" min="0" step="any" inputmode="decimal">
+    <button class="m-remove" type="button" onclick="this.closest('.manual-row').remove()">×</button>
+  `;
+  wrap.appendChild(row);
+  row.querySelector('.m-produkt').focus();
+}
+
+function continueManual() {
+  const leverandor = $('m-leverandor').value.trim();
+  const dato = $('m-dato').value.trim();
+  if (!leverandor) { showAlert('Udfyld leverandør', 'error'); return; }
+  if (!dato) { showAlert('Udfyld dato', 'error'); return; }
+
+  const rows = document.querySelectorAll('#m-products .manual-row');
+  const produkter = [];
+  rows.forEach(r => {
+    const type = r.querySelector('.m-type').value;
+    const produkt = r.querySelector('.m-produkt').value.trim();
+    const maengde = r.querySelector('.m-maengde').value.trim();
+    if (produkt && maengde) produkter.push({ type, produkt, maengde });
+  });
+  if (produkter.length === 0) {
+    showAlert('Tilføj mindst ét produkt med navn og mængde', 'error');
+    return;
+  }
+
+  state.deliveryInfo = { leverandor, dato, produkter };
+  state.ingredients = produkter.map(p => ({ ...p, batchnummer: null, ibn: null }));
+  state.currentIdx = 0;
+  showLabels();
+}
+
+// ===== Etiketscanning =====
+function showLabels() {
+  hideAll();
+  const d = state.deliveryInfo;
+  const ing = state.ingredients[state.currentIdx];
+  const tableRows = state.ingredients.map((item, i) => {
+    const status = item.batchnummer
+      ? '<span class="pill pill-done">✓</span>'
+      : i === state.currentIdx
+        ? '<span class="pill pill-active">aktiv</span>'
+        : '<span class="pill pill-wait">venter</span>';
+    return `<tr><td>${escapeHtml(item.produkt)}</td><td class="mono">${escapeHtml(item.batchnummer || '-')}</td><td>${status}</td></tr>`;
+  }).join('');
+
+  $('view-labels').innerHTML = `
+    <div class="card">
+      <div class="info-row">
+        <div><span>Leverandør:</span> <b>${escapeHtml(d.leverandor)}</b></div>
+        <div><span>Dato:</span> ${escapeHtml(d.dato)}</div>
+      </div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h2 style="font-size:17px;">2. Scan etiketter</h2>
+        <span class="counter">${state.currentIdx + 1} / ${state.ingredients.length}</span>
+      </div>
+      <div class="ingredient-highlight">
+        <div class="meta">Næste produkt:</div>
+        <div class="name">${escapeHtml(ing.produkt)}</div>
+        <div class="qty">${escapeHtml(ing.type)} - ${escapeHtml(ing.maengde)} stk.</div>
+      </div>
+      <input type="file" id="file-label" accept="image/*" capture="environment" onchange="handleLabel(this)">
+      <div id="label-zone">
+        <button class="btn" onclick="document.getElementById('file-label').click()">📸 Tag billede af etiket</button>
+      </div>
+      <div class="divider">eller</div>
+      <label class="lbl">Skriv batchnummer manuelt</label>
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="manual-batch" placeholder="fx LOT12345" autocomplete="off" style="flex:1;">
+        <button class="btn btn-outline" style="width:auto;flex:0 0 auto;padding:12px 18px;" onclick="submitManualBatch()">OK</button>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="skipBatch()">Spring over (intet batchnummer)</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table><thead><tr><th>Produkt</th><th>Batch</th><th>Status</th></tr></thead>
+      <tbody>${tableRows}</tbody></table>
+    </div>`;
+}
+
+function advanceOrFinish() {
+  if (state.currentIdx < state.ingredients.length - 1) {
+    state.currentIdx++;
+    showLabels();
+  } else {
+    showDone();
+  }
+}
+
+function submitManualBatch() {
+  const v = $('manual-batch').value.trim();
+  if (!v) { showAlert('Skriv et batchnummer eller spring over', 'error'); return; }
+  state.ingredients[state.currentIdx].batchnummer = v;
+  advanceOrFinish();
+}
+
+function skipBatch() {
+  state.ingredients[state.currentIdx].batchnummer = '';
+  advanceOrFinish();
+}
+
+async function handleLabel(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  showAlert('', '');
+  const name = state.ingredients[state.currentIdx].produkt;
+  const preview = URL.createObjectURL(file);
+  $('label-zone').innerHTML = `<div class="loading"><span class="spinner"></span> Læser batchnummer...<img src="${preview}" class="preview"></div>`;
+
+  try {
+    const { data, mediaType } = await fileToBase64(file);
+    const prompt = `Du ser en etiket/label på et produkt: "${name}".
+Udtræk batchnummer (batch number / lot number / parti nummer / charge / LOT) fra etiketten.
+Svar KUN med JSON (ingen markdown):
+{ "batchnummer": "det fundne batchnummer" }`;
+    const parsed = JSON.parse(await callClaude(data, mediaType, prompt));
+    state.ingredients[state.currentIdx].batchnummer = parsed.batchnummer;
+    advanceOrFinish();
+  } catch (err) {
+    console.error(err);
+    showAlert('Fejl: ' + err.message + ' - prøv igen eller skriv manuelt', 'error');
+    showLabels();
+  }
+}
+
+// ===== Done / Sheets / Labels =====
+function showDone() {
+  hideAll();
+  state.sheetWritten = false;
+  const d = state.deliveryInfo;
+  const tableRows = state.ingredients.map(i =>
+    `<tr><td>${escapeHtml(i.type)}</td><td>${escapeHtml(i.produkt)}</td><td>${escapeHtml(i.maengde)}</td><td class="mono">${escapeHtml(i.batchnummer || '-')}</td><td class="mono">${escapeHtml(i.ibn || '-')}</td></tr>`
+  ).join('');
+
+  $('view-done').innerHTML = `
+    <div class="card" style="text-align:center;">
+      <div class="done-icon">✅</div>
+      <h2 style="font-size:19px;margin-bottom:4px;">Modtagekontrol klar</h2>
+      <p style="color:var(--muted);font-size:13px;">${escapeHtml(d.leverandor)} - ${escapeHtml(d.dato)}</p>
+    </div>
+    <div class="card" style="padding:0;overflow:auto;">
+      <table>
+        <thead><tr><th>Type</th><th>Produkt</th><th>Mængde</th><th>Lev. batch</th><th>IBN</th></tr></thead>
+        <tbody id="done-tbody">${tableRows}</tbody>
+      </table>
+    </div>
+    <div class="flex-row">
+      <button class="btn btn-green" id="btn-sheets" onclick="sendToSheets()">📊 Skriv til Sheets</button>
+      <button class="btn btn-outline" onclick="resetApp()">Ny modtagelse</button>
+    </div>
+
+    <div id="label-actions" style="display:none;margin-top:14px;"></div>
+
+    <details style="margin-top:14px;font-size:12px;color:var(--muted);">
+      <summary style="cursor:pointer;padding:6px 0;">⚙️ Apps Script — sådan returneres IBN'er</summary>
+      <p style="margin:8px 0;">Tilføj følgende i din <code>doGet</code> efter rækkerne er skrevet (juster <code>IBN_COL</code> til den kolonne hvor IBN står i LOG-E101):</p>
+      <pre style="background:var(--bg);padding:10px;border-radius:8px;overflow-x:auto;font-size:11px;line-height:1.5;">var startRow = sheet.getLastRow() - rows.length + 1;
+var IBN_COL = 1; // &lt;-- juster til IBN-kolonnen
+var ibns = sheet
+  .getRange(startRow, IBN_COL, rows.length, 1)
+  .getDisplayValues()
+  .map(function(r){ return r[0]; });
+
+// Hvis kaldt med ?callback=... (JSONP):
+if (callback) {
+  return ContentService
+    .createTextOutput(callback + '(' + JSON.stringify({success:true, ibns:ibns}) + ')')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+return ContentService
+  .createTextOutput(JSON.stringify({success:true, ibns:ibns}))
+  .setMimeType(ContentService.MimeType.JSON);</pre>
+    </details>
+
+    <div id="debug-box" class="card" style="margin-top:14px;font-family:'SF Mono','Courier New',monospace;font-size:11px;max-height:300px;overflow-y:auto;display:none;"></div>`;
+}
+
+function renderDoneTable() {
+  const tbody = $('done-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = state.ingredients.map(i =>
+    `<tr><td>${escapeHtml(i.type)}</td><td>${escapeHtml(i.produkt)}</td><td>${escapeHtml(i.maengde)}</td><td class="mono">${escapeHtml(i.batchnummer || '-')}</td><td class="mono">${escapeHtml(i.ibn || '-')}</td></tr>`
+  ).join('');
+}
+
+async function sendToSheets() {
+  if (state.sheetWritten) return;
+  const btn = $('btn-sheets');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Skriver...';
+  showAlert('', '');
+  var db = $('debug-box');
+  if (db) { db.style.display = 'block'; db.innerHTML = ''; }
+  debugLog('Starter sheets-kald...');
+  debugLog('Script URL: ' + SCRIPT_URL);
+  try {
+    const rows = state.ingredients.map(ing => ({
+      dato: state.deliveryInfo?.dato || '',
+      type: ing.type || '',
+      produkt: ing.produkt || '',
+      maengde: ing.maengde || '',
+      leverandor: state.deliveryInfo?.leverandor || '',
+      batchnummer: ing.batchnummer || ''
+    }));
+    debugLog('Antal rækker: ' + rows.length);
+    debugLog('Data: ' + JSON.stringify(rows).substring(0, 200));
+    const result = await writeToSheet(rows);
+    state.sheetWritten = true;
+
+    // Forsøg at læse IBN'er fra svaret
+    const ibns = Array.isArray(result?.ibns) ? result.ibns : null;
+    if (ibns && ibns.length === state.ingredients.length) {
+      ibns.forEach((v, i) => state.ingredients[i].ibn = String(v || '').trim());
+      debugLog('Modtog ' + ibns.length + ' IBN(er) fra Apps Script');
+      renderDoneTable();
+      showLabelActions(true);
+    } else {
+      debugLog('Apps Script returnerede ikke IBN-array - viser manuel paste');
+      showLabelActions(false);
+    }
+
+    showAlert('Data skrevet til Google Sheets!', 'success');
+    debugLog('SUCCESS!');
+    btn.outerHTML = `<a href="https://docs.google.com/spreadsheets/d/${SHEET_ID}" target="_blank" rel="noopener"
+      class="btn btn-green" style="text-decoration:none;">Åbn Sheet</a>`;
+  } catch (err) {
+    debugLog('FEJL: ' + err.name + ': ' + err.message);
+    debugLog('Stack: ' + (err.stack || 'ingen'));
+    showAlert('Fejl: ' + err.message, 'error');
+    btn.disabled = false;
+    btn.innerHTML = '📊 Skriv til Sheets';
+  }
+}
+
+function showLabelActions(hasIBNs) {
+  const wrap = $('label-actions');
+  if (!wrap) return;
+  wrap.style.display = 'block';
+
+  if (hasIBNs) {
+    wrap.innerHTML = `
+      <div class="card">
+        <h3 style="font-size:15px;margin-bottom:6px;">🏷️ Print labels på PT-P750W (6 mm tape)</h3>
+        <p style="color:var(--muted);font-size:12px;margin-bottom:12px;">
+          Hent CSV og importer i P-touch Editor:<br>
+          <b>Fil → Database → Connect Database</b> → vælg CSV → forbind IBN-feltet til tekstboksen i din skabelon → Print alle.
+        </p>
+        <button class="btn" onclick="downloadCSV()">📥 Download IBN-CSV (${state.ingredients.length} labels)</button>
+      </div>`;
+  } else {
+    wrap.innerHTML = `
+      <div class="card">
+        <h3 style="font-size:15px;margin-bottom:6px;">🏷️ Labels - paste IBN'er fra LOG-E101</h3>
+        <p style="color:var(--muted);font-size:12px;margin-bottom:10px;">
+          Apps Script returnerede ikke IBN'er endnu. Åbn LOG-E101 og kopier IBN-kolonnen for de netop indsatte rækker. Paste herunder (én IBN per linje, samme rækkefølge som tabellen):
+        </p>
+        <textarea id="ibn-paste" rows="${Math.max(state.ingredients.length, 3)}" placeholder="260501-01&#10;260501-02&#10;..."></textarea>
+        <button class="btn" style="margin-top:8px;" onclick="useManualIBNs()">Brug IBN'er →</button>
+      </div>`;
+  }
+}
+
+function useManualIBNs() {
+  const txt = $('ibn-paste').value.trim();
+  if (!txt) { showAlert('Paste IBN-listen først', 'error'); return; }
+  const lines = txt.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (lines.length !== state.ingredients.length) {
+    showAlert(`Du paste'ede ${lines.length} IBN'er, men der er ${state.ingredients.length} produkter. Tjek listen.`, 'error');
+    return;
+  }
+  lines.forEach((v, i) => state.ingredients[i].ibn = v);
+  renderDoneTable();
+  showLabelActions(true);
+  showAlert('IBN\'er gemt - du kan nu downloade CSV', 'success');
+}
+
+function csvField(v) {
+  const s = String(v == null ? '' : v);
+  return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+}
+
+function downloadCSV() {
+  const items = state.ingredients.filter(i => i.ibn);
+  if (items.length === 0) {
+    showAlert('Ingen IBN at downloade', 'error');
+    return;
+  }
+  const header = ['IBN','Produkt','Type','Maengde','LevBatch','Leverandor','Dato'].join(';');
+  const lines = items.map(i => [
+    i.ibn,
+    i.produkt,
+    i.type,
+    i.maengde,
+    i.batchnummer || '',
+    state.deliveryInfo?.leverandor || '',
+    state.deliveryInfo?.dato || ''
+  ].map(csvField).join(';'));
+
+  // BOM så æøå virker i Excel/P-touch Editor
+  const csv = '\uFEFF' + header + '\n' + lines.join('\n') + '\n';
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const safeDate = (state.deliveryInfo?.dato || todayDDMMYYYY()).replace(/[^\w-]/g,'-');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `IBN-labels-${safeDate}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 200);
+  showAlert(`CSV med ${items.length} IBN'er hentet - importer i P-touch Editor`, 'success');
+}
+
+function resetApp() {
+  state.deliveryInfo = null;
+  state.ingredients = [];
+  state.currentIdx = 0;
+  state.sheetWritten = false;
+  showDelivery();
+}
+
+// Init
+if (state.apiKey) { showDelivery(); } else { showSetup(); }
+
+// PWA Service Worker
+if ('serviceWorker' in navigator) {
+  const swCode = `
+    const CACHE = 'grums-v5';
+    self.addEventListener('install', e => { self.skipWaiting(); });
+    self.addEventListener('activate', e => { e.waitUntil(clients.claim()); });
+    self.addEventListener('fetch', e => {
+      if (e.request.method !== 'GET') return;
+      if (e.request.url.includes('api.anthropic.com') || e.request.url.includes('script.google.com')) return;
+      e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+    });
+  `;
+  const blob = new Blob([swCode], { type: 'application/javascript' });
+  navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(() => {});
+}
+
+// PWA Manifest
+const manifest = {
+  name: 'Modtagekontrol - GRUMS',
+  short_name: 'Modtagekontrol',
+  start_url: '.',
+  display: 'standalone',
+  background_color: '#0a0a0a',
+  theme_color: '#0a0a0a',
+  icons: [{
+    src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxODAgMTgwIj48cmVjdCB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjQwIiBmaWxsPSIjMWExYTFhIi8+PHRleHQgeD0iOTAiIHk9IjEwNSIgZm9udC1zaXplPSI4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2M0YTM1YSI+4pyTPC90ZXh0Pjwvc3ZnPg==',
+    sizes: '180x180', type: 'image/svg+xml', purpose: 'any'
+  }]
+};
+const mBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+const mLink = document.createElement('link');
+mLink.rel = 'manifest';
+mLink.href = URL.createObjectURL(mBlob);
+document.head.appendChild(mLink);
+</script>
+</body>
+</html>
