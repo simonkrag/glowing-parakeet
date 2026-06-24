@@ -139,7 +139,7 @@ textarea { resize: vertical; min-height: 80px; font-family: 'SF Mono','Courier N
 </div>
 <script>
 const SHEET_ID = '1FbZBfFw68-4HysGFlvXdJ1Ar8M7Ha3tJD2Pf0lsJ_-o';
-const SCRIPT_URL = 'https://script.google.com/a/macros/grumsaarhus.com/s/AKfycbwhyon4kiKbu0_C3iY15_3Rtc-5-OYNCZccvRmhFYmEgdRuRSVdOZ3wlUHt28ifxeokVg/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx67TP-VhUG4OyiTYkzIBkj_VZJHzAz8xU2BTHHKOr3GA-uz3OaMXReAtf8I1hOfwqmxg/exec';
 const LS_API_KEY = 'grums_api_key';
 let state = {
   apiKey: localStorage.getItem(LS_API_KEY) || '',
@@ -152,7 +152,6 @@ function $(id) { return document.getElementById(id); }
 function showAlert(msg, type) {
   $('alert-box').innerHTML = msg ? `<div class="alert alert-${type}">${msg}</div>` : '';
 }
-// ===== Diagnostik =====
 function diag(msg, kind) {
   try {
     const box = document.getElementById('diag-log');
@@ -704,12 +703,10 @@ function resetApp() {
   state.sheetWritten = false;
   showDelivery();
 }
-// Init
 if (state.apiKey) { showDelivery(); } else { showSetup(); }
-// PWA Service Worker
 if ('serviceWorker' in navigator) {
   const swCode = `
-    const CACHE = 'grums-v8';
+    const CACHE = 'grums-v9';
     self.addEventListener('install', e => { self.skipWaiting(); });
     self.addEventListener('activate', e => { e.waitUntil(clients.claim()); });
     self.addEventListener('fetch', e => {
@@ -721,7 +718,6 @@ if ('serviceWorker' in navigator) {
   const blob = new Blob([swCode], { type: 'application/javascript' });
   navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(() => {});
 }
-// PWA Manifest
 const manifest = {
   name: 'Modtagekontrol - GRUMS',
   short_name: 'Modtagekontrol',
