@@ -112,10 +112,10 @@ textarea { resize: vertical; min-height: 80px; font-family: 'SF Mono','Courier N
 
 .lbl { font-size: 12px; color: var(--muted); display: block; margin: 10px 0 4px; }
 .manual-row {
-  display: grid; grid-template-columns: 88px 1fr 64px 34px;
-  gap: 6px; margin-bottom: 6px; align-items: center;
+  display: grid; grid-template-columns: 80px 1fr 56px 48px 28px;
+  gap: 4px; margin-bottom: 6px; align-items: center;
 }
-.manual-row select, .manual-row input { padding: 9px 8px; font-size: 12px; }
+.manual-row select, .manual-row input { padding: 9px 6px; font-size: 12px; }
 .m-remove {
   background: transparent; color: var(--danger); border: 1px solid var(--border);
   border-radius: 8px; cursor: pointer; padding: 6px; font-size: 18px; line-height: 1;
@@ -142,6 +142,15 @@ textarea { resize: vertical; min-height: 80px; font-family: 'SF Mono','Courier N
   <div id="view-manual"></div>
   <div id="view-labels"></div>
   <div id="view-done"></div>
+
+  <details id="diag-panel" style="margin-top:24px;font-size:11px;color:var(--muted);">
+    <summary style="cursor:pointer;padding:8px 0;">🔧 Diagnostik (åbn hvis noget ikke virker)</summary>
+    <div id="diag-log" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;font-family:'SF Mono','Courier New',monospace;font-size:11px;max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;"></div>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <button class="btn btn-outline btn-sm" style="margin:0;" onclick="document.getElementById('diag-log').innerHTML=''">Ryd</button>
+      <button class="btn btn-outline btn-sm" style="margin:0;" onclick="testApi()">Test API-nøgle</button>
+    </div>
+  </details>
 </div>
 
 <script>
@@ -161,6 +170,57 @@ function $(id) { return document.getElementById(id); }
 
 function showAlert(msg, type) {
   $('alert-box').innerHTML = msg ? `<div class="alert alert-${type}">${msg}</div>` : '';
+}
+
+// ===== Diagnostik =====
+function diag(msg, kind) {
+  try {
+    const box = document.getElementById('diag-log');
+    if (!box) { console.log('[DIAG]', msg); return; }
+    const t = new Date().toTimeString().slice(0,8);
+    const color = kind === 'err' ? 'var(--danger)' : kind === 'ok' ? 'var(--success)' : 'var(--fg)';
+    const line = document.createElement('div');
+    line.style.cssText = 'border-bottom:1px solid var(--border);padding:4px 0;color:' + color;
+    line.textContent = t + '  ' + msg;
+    box.appendChild(line);
+    box.scrollTop = box.scrollHeight;
+  } catch(e) {}
+  console.log('[DIAG]', msg);
+}
+
+window.addEventListener('error', function(e) {
+  diag('JS-fejl: ' + (e.message || e) + (e.filename ? ' @ ' + e.filename + ':' + e.lineno : ''), 'err');
+});
+window.addEventListener('unhandledrejection', function(e) {
+  diag('Unhandled promise: ' + (e.reason?.message || e.reason || 'ukendt'), 'err');
+});
+
+async function testApi() {
+  if (!state.apiKey) { diag('Ingen API-nøgle gemt', 'err'); return; }
+  diag('Tester API-nøgle...');
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': state.apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 10,
+        messages: [{ role: 'user', content: 'ping' }]
+      })
+    });
+    diag('API svarede: ' + res.status + ' ' + res.statusText, res.ok ? 'ok' : 'err');
+    if (!res.ok) {
+      const err = await res.text();
+      diag('Detalje: ' + err.substring(0, 200), 'err');
+    }
+  } catch (e) {
+    diag('Netværksfejl: ' + e.message, 'err');
+  }
 }
 
 function escapeHtml(s) {
@@ -231,7 +291,6 @@ async function writeToSheet(rows) {
     debugLog('Fetch fejl: ' + err.name + ': ' + err.message);
     debugLog('Stack: ' + err.stack);
 
-    // Fallback: prøv via script-tag (JSONP-style)
     debugLog('Prøver script-tag fallback...');
     return new Promise((resolve, reject) => {
       const callbackName = 'sheetCallback_' + Date.now();
@@ -313,7 +372,7 @@ function showDelivery() {
       <h2 style="font-size:17px;margin-bottom:6px;">1. Følgeseddel</h2>
       <p style="color:var(--muted);font-size:13px;margin-bottom:14px;">Tag et billede af følgesedlen</p>
       <input type="file" id="file-delivery" accept="image/*" capture="environment" onchange="handleDelivery(this)">
-      <div class="upload-zone" id="delivery-zone" onclick="document.getElementById('file-delivery').click()">
+      <div class="upload-zone" id="delivery-zone" onclick="diag('Klik på upload-zone - åbner kamera/picker'); document.getElementById('file-delivery').click()">
         <div class="icon">📄</div>
         <div class="label">Tryk for at tage billede</div>
       </div>
@@ -324,61 +383,85 @@ function showDelivery() {
 }
 
 async function handleDelivery(input) {
+  diag('onchange fired - filer: ' + (input.files?.length || 0));
   const file = input.files?.[0];
-  if (!file) return;
+  if (!file) { diag('Ingen fil i input - kameraflowet kom ikke tilbage med billede', 'err'); return; }
+  diag('Fil: ' + file.name + ' | type: ' + (file.type || '(tom)') + ' | størrelse: ' + Math.round(file.size/1024) + ' KB');
+
+  const t = (file.type || '').toLowerCase();
+  const n = (file.name || '').toLowerCase();
+  if (t.includes('heic') || t.includes('heif') || n.endsWith('.heic') || n.endsWith('.heif')) {
+    showAlert('Billedet er i HEIC-format som API et ikke understøtter. Skift på iPhone: Indstillinger → Kamera → Formater → Mest kompatibelt. Tag billedet igen.', 'error');
+    diag('HEIC-format - kan ikke sendes til API', 'err');
+    return;
+  }
+
   showAlert('', '');
   const preview = URL.createObjectURL(file);
   $('delivery-zone').innerHTML = `<div class="spinner"></div> Analyserer følgeseddel...<img src="${preview}" class="preview">`;
+  diag('Spinner vist, starter base64...');
 
   try {
     const { data, mediaType } = await fileToBase64(file);
+    diag('Base64 klar (' + Math.round(data.length/1024) + ' KB), kalder Claude API...');
     const prompt = `Du ser en følgeseddel (delivery note/packing list) for ingredienser eller emballage.
 
 Udtræk følgende som JSON (og kun JSON, ingen markdown):
 {
   "leverandor": "leverandørens navn",
-  "dato": "modtagelsesdato i format DD/MM/YYYY",
   "produkter": [
     {
       "type": "Råvare eller Emballage",
       "produkt": "produktnavn/beskrivelse som det står på følgesedlen",
-      "maengde": "antal/mængde som tal"
+      "maengde": "pakningsstørrelse med enhed, fx '100g', '500ml', '2.5L'",
+      "antal": "antal modtagne enheder som tal, fx '1' eller '5'"
     }
   ]
 }
 
 Regler:
-- "type" skal være enten "Råvare" eller "Emballage" baseret på om det er en ingrediens/råvare eller emballage/pakning.
-- "produkt" skal inkludere den fulde produktbeskrivelse.
-- "maengde" skal kun være tallet, ingen enhed.
+- "type" er enten "Råvare" eller "Emballage" baseret på om det er en ingrediens eller emballage/pakning.
+- "produkt" er den fulde produktbeskrivelse.
+- "maengde" er pakningens størrelse/vægt/volumen med enheden, fx "100g", "500ml", "2.5L".
+- "antal" er hvor mange enheder af den pakkestørrelse der blev modtaget (typisk 1).
 - Inkluder alle linjer fra følgesedlen.`;
-    const parsed = JSON.parse(await callClaude(data, mediaType, prompt));
-    state.deliveryInfo = parsed;
-    state.ingredients = parsed.produkter.map(p => ({ ...p, batchnummer: null, ibn: null }));
+    const rawText = await callClaude(data, mediaType, prompt);
+    diag('API svar modtaget, parser JSON...', 'ok');
+    const parsed = JSON.parse(rawText);
+    diag('JSON OK - ' + (parsed.produkter?.length || 0) + ' produkter fundet', 'ok');
+    state.deliveryInfo = { leverandor: parsed.leverandor, dato: todayDDMMYYYY() };
+    state.ingredients = parsed.produkter.map(p => ({
+      type: p.type || 'Råvare',
+      produkt: p.produkt || '',
+      maengde: p.maengde || '',
+      antal: p.antal || '1',
+      batchnummer: null,
+      ibn: null
+    }));
     state.currentIdx = 0;
     showLabels();
   } catch (err) {
     console.error(err);
+    diag('FEJL: ' + err.message, 'err');
     showAlert('Fejl: ' + err.message, 'error');
     showDelivery();
   }
 }
 
-// ===== Manuel indtastning =====
 function showManual() {
   hideAll();
   $('view-manual').innerHTML = `
     <div class="card">
       <h2 style="font-size:17px;margin-bottom:6px;">1. Manuel indtastning</h2>
-      <p style="color:var(--muted);font-size:13px;margin-bottom:6px;">Ingen følgeseddel - skriv hvad der blev modtaget.</p>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:6px;">Ingen følgeseddel - skriv hvad der blev modtaget. Dato sættes automatisk til ${todayDDMMYYYY()}.</p>
 
       <label class="lbl">Leverandør</label>
-      <input type="text" id="m-leverandor" placeholder="fx Solhjulet ApS" autocomplete="off">
-
-      <label class="lbl">Dato (DD/MM/YYYY)</label>
-      <input type="text" id="m-dato" value="${todayDDMMYYYY()}" autocomplete="off">
+      <input type="text" id="m-leverandor" placeholder="fx Alexmo" autocomplete="off">
 
       <label class="lbl" style="margin-top:14px;">Produkter</label>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:4px;display:grid;grid-template-columns:80px 1fr 56px 48px 28px;gap:4px;">
+        <div>Type</div><div>Produkt</div><div>Mængde</div><div>Antal</div><div></div>
+      </div>
       <div id="m-products"></div>
 
       <button class="btn btn-outline btn-sm" onclick="addManualProduct()">+ Tilføj produkt</button>
@@ -399,7 +482,8 @@ function addManualProduct() {
       <option value="Emballage">Emballage</option>
     </select>
     <input type="text" class="m-produkt" placeholder="Produktnavn" autocomplete="off">
-    <input type="number" class="m-maengde" placeholder="Antal" min="0" step="any" inputmode="decimal">
+    <input type="text" class="m-maengde" placeholder="100g" autocomplete="off">
+    <input type="number" class="m-antal" placeholder="1" min="1" step="1" inputmode="numeric" value="1">
     <button class="m-remove" type="button" onclick="this.closest('.manual-row').remove()">×</button>
   `;
   wrap.appendChild(row);
@@ -408,9 +492,7 @@ function addManualProduct() {
 
 function continueManual() {
   const leverandor = $('m-leverandor').value.trim();
-  const dato = $('m-dato').value.trim();
   if (!leverandor) { showAlert('Udfyld leverandør', 'error'); return; }
-  if (!dato) { showAlert('Udfyld dato', 'error'); return; }
 
   const rows = document.querySelectorAll('#m-products .manual-row');
   const produkter = [];
@@ -418,20 +500,20 @@ function continueManual() {
     const type = r.querySelector('.m-type').value;
     const produkt = r.querySelector('.m-produkt').value.trim();
     const maengde = r.querySelector('.m-maengde').value.trim();
-    if (produkt && maengde) produkter.push({ type, produkt, maengde });
+    const antal = r.querySelector('.m-antal').value.trim();
+    if (produkt && (maengde || antal)) produkter.push({ type, produkt, maengde, antal: antal || '1' });
   });
   if (produkter.length === 0) {
-    showAlert('Tilføj mindst ét produkt med navn og mængde', 'error');
+    showAlert('Tilføj mindst ét produkt med navn', 'error');
     return;
   }
 
-  state.deliveryInfo = { leverandor, dato, produkter };
+  state.deliveryInfo = { leverandor, dato: todayDDMMYYYY() };
   state.ingredients = produkter.map(p => ({ ...p, batchnummer: null, ibn: null }));
   state.currentIdx = 0;
   showLabels();
 }
 
-// ===== Etiketscanning =====
 function showLabels() {
   hideAll();
   const d = state.deliveryInfo;
@@ -460,7 +542,7 @@ function showLabels() {
       <div class="ingredient-highlight">
         <div class="meta">Næste produkt:</div>
         <div class="name">${escapeHtml(ing.produkt)}</div>
-        <div class="qty">${escapeHtml(ing.type)} - ${escapeHtml(ing.maengde)} stk.</div>
+        <div class="qty">${escapeHtml(ing.type)} - ${escapeHtml(ing.antal || '1')} × ${escapeHtml(ing.maengde || '?')}</div>
       </div>
       <input type="file" id="file-label" accept="image/*" capture="environment" onchange="handleLabel(this)">
       <div id="label-zone">
@@ -525,13 +607,12 @@ Svar KUN med JSON (ingen markdown):
   }
 }
 
-// ===== Done / Sheets / Labels =====
 function showDone() {
   hideAll();
   state.sheetWritten = false;
   const d = state.deliveryInfo;
   const tableRows = state.ingredients.map(i =>
-    `<tr><td>${escapeHtml(i.type)}</td><td>${escapeHtml(i.produkt)}</td><td>${escapeHtml(i.maengde)}</td><td class="mono">${escapeHtml(i.batchnummer || '-')}</td><td class="mono">${escapeHtml(i.ibn || '-')}</td></tr>`
+    `<tr><td>${escapeHtml(i.type)}</td><td>${escapeHtml(i.produkt)}</td><td>${escapeHtml(i.maengde)}</td><td>${escapeHtml(i.antal || '1')}</td><td class="mono">${escapeHtml(i.batchnummer || '-')}</td><td class="mono">${escapeHtml(i.ibn || '-')}</td></tr>`
   ).join('');
 
   $('view-done').innerHTML = `
@@ -542,7 +623,7 @@ function showDone() {
     </div>
     <div class="card" style="padding:0;overflow:auto;">
       <table>
-        <thead><tr><th>Type</th><th>Produkt</th><th>Mængde</th><th>Lev. batch</th><th>IBN</th></tr></thead>
+        <thead><tr><th>Type</th><th>Produkt</th><th>Mængde</th><th>Antal</th><th>Lev. batch</th><th>IBN</th></tr></thead>
         <tbody id="done-tbody">${tableRows}</tbody>
       </table>
     </div>
@@ -553,27 +634,6 @@ function showDone() {
 
     <div id="label-actions" style="display:none;margin-top:14px;"></div>
 
-    <details style="margin-top:14px;font-size:12px;color:var(--muted);">
-      <summary style="cursor:pointer;padding:6px 0;">⚙️ Apps Script — sådan returneres IBN'er</summary>
-      <p style="margin:8px 0;">Tilføj følgende i din <code>doGet</code> efter rækkerne er skrevet (juster <code>IBN_COL</code> til den kolonne hvor IBN står i LOG-E101):</p>
-      <pre style="background:var(--bg);padding:10px;border-radius:8px;overflow-x:auto;font-size:11px;line-height:1.5;">var startRow = sheet.getLastRow() - rows.length + 1;
-var IBN_COL = 1; // &lt;-- juster til IBN-kolonnen
-var ibns = sheet
-  .getRange(startRow, IBN_COL, rows.length, 1)
-  .getDisplayValues()
-  .map(function(r){ return r[0]; });
-
-// Hvis kaldt med ?callback=... (JSONP):
-if (callback) {
-  return ContentService
-    .createTextOutput(callback + '(' + JSON.stringify({success:true, ibns:ibns}) + ')')
-    .setMimeType(ContentService.MimeType.JAVASCRIPT);
-}
-return ContentService
-  .createTextOutput(JSON.stringify({success:true, ibns:ibns}))
-  .setMimeType(ContentService.MimeType.JSON);</pre>
-    </details>
-
     <div id="debug-box" class="card" style="margin-top:14px;font-family:'SF Mono','Courier New',monospace;font-size:11px;max-height:300px;overflow-y:auto;display:none;"></div>`;
 }
 
@@ -581,7 +641,7 @@ function renderDoneTable() {
   const tbody = $('done-tbody');
   if (!tbody) return;
   tbody.innerHTML = state.ingredients.map(i =>
-    `<tr><td>${escapeHtml(i.type)}</td><td>${escapeHtml(i.produkt)}</td><td>${escapeHtml(i.maengde)}</td><td class="mono">${escapeHtml(i.batchnummer || '-')}</td><td class="mono">${escapeHtml(i.ibn || '-')}</td></tr>`
+    `<tr><td>${escapeHtml(i.type)}</td><td>${escapeHtml(i.produkt)}</td><td>${escapeHtml(i.maengde)}</td><td>${escapeHtml(i.antal || '1')}</td><td class="mono">${escapeHtml(i.batchnummer || '-')}</td><td class="mono">${escapeHtml(i.ibn || '-')}</td></tr>`
   ).join('');
 }
 
@@ -597,10 +657,11 @@ async function sendToSheets() {
   debugLog('Script URL: ' + SCRIPT_URL);
   try {
     const rows = state.ingredients.map(ing => ({
-      dato: state.deliveryInfo?.dato || '',
+      dato: todayDDMMYYYY(),
       type: ing.type || '',
       produkt: ing.produkt || '',
       maengde: ing.maengde || '',
+      antal: ing.antal || '1',
       leverandor: state.deliveryInfo?.leverandor || '',
       batchnummer: ing.batchnummer || ''
     }));
@@ -609,7 +670,6 @@ async function sendToSheets() {
     const result = await writeToSheet(rows);
     state.sheetWritten = true;
 
-    // Forsøg at læse IBN'er fra svaret
     const ibns = Array.isArray(result?.ibns) ? result.ibns : null;
     if (ibns && ibns.length === state.ingredients.length) {
       ibns.forEach((v, i) => state.ingredients[i].ibn = String(v || '').trim());
@@ -656,7 +716,7 @@ function showLabelActions(hasIBNs) {
         <p style="color:var(--muted);font-size:12px;margin-bottom:10px;">
           Apps Script returnerede ikke IBN'er endnu. Åbn LOG-E101 og kopier IBN-kolonnen for de netop indsatte rækker. Paste herunder (én IBN per linje, samme rækkefølge som tabellen):
         </p>
-        <textarea id="ibn-paste" rows="${Math.max(state.ingredients.length, 3)}" placeholder="260501-01&#10;260501-02&#10;..."></textarea>
+        <textarea id="ibn-paste" rows="${Math.max(state.ingredients.length, 3)}" placeholder="A88&#10;A89&#10;..."></textarea>
         <button class="btn" style="margin-top:8px;" onclick="useManualIBNs()">Brug IBN'er →</button>
       </div>`;
   }
@@ -673,7 +733,7 @@ function useManualIBNs() {
   lines.forEach((v, i) => state.ingredients[i].ibn = v);
   renderDoneTable();
   showLabelActions(true);
-  showAlert('IBN\'er gemt - du kan nu downloade CSV', 'success');
+  showAlert('IBN er gemt - du kan nu downloade CSV', 'success');
 }
 
 function csvField(v) {
@@ -687,18 +747,18 @@ function downloadCSV() {
     showAlert('Ingen IBN at downloade', 'error');
     return;
   }
-  const header = ['IBN','Produkt','Type','Maengde','LevBatch','Leverandor','Dato'].join(';');
+  const header = ['IBN','Produkt','Type','Maengde','Antal','LevBatch','Leverandor','Dato'].join(';');
   const lines = items.map(i => [
     i.ibn,
     i.produkt,
     i.type,
     i.maengde,
+    i.antal || '1',
     i.batchnummer || '',
     state.deliveryInfo?.leverandor || '',
-    state.deliveryInfo?.dato || ''
+    todayDDMMYYYY()
   ].map(csvField).join(';'));
 
-  // BOM så æøå virker i Excel/P-touch Editor
   const csv = '\uFEFF' + header + '\n' + lines.join('\n') + '\n';
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -726,7 +786,7 @@ if (state.apiKey) { showDelivery(); } else { showSetup(); }
 // PWA Service Worker
 if ('serviceWorker' in navigator) {
   const swCode = `
-    const CACHE = 'grums-v5';
+    const CACHE = 'grums-v7';
     self.addEventListener('install', e => { self.skipWaiting(); });
     self.addEventListener('activate', e => { e.waitUntil(clients.claim()); });
     self.addEventListener('fetch', e => {
