@@ -257,57 +257,108 @@ async function callClaude(base64, mediaType, prompt) {
   return raw.replace(/```json|```/g, '').trim();
 }
 
+// XMLHttpRequest håndterer WebKit's cross-origin-redirect-adfærd langt mere
+// robust end fetch() for Apps Script webapp-URL'er (de omdirigerer altid til
+// script.googleusercontent.com). Prøves derfor FØRST.
+function writeToSheetXHR(url) {
+  return new Promise((resolve, reject) => {
+    debugLog('Prøver XHR-metode...');
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.timeout = 20000;
+    xhr.onload = function () {
+      debugLog('XHR status: ' + xhr.status);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch (e) {
+          reject(new Error('XHR JSON-parse fejl: ' + e.message + ' | body: ' + xhr.responseText.substring(0, 150)));
+        }
+      } else {
+        reject(new Error('XHR HTTP-fejl: ' + xhr.status));
+      }
+    };
+    xhr.onerror = function () {
+      debugLog('XHR netværksfejl (onerror)');
+      reject(new Error('XHR netværksfejl'));
+    };
+    xhr.ontimeout = function () {
+      debugLog('XHR timeout efter 20s');
+      reject(new Error('XHR timeout'));
+    };
+    xhr.send();
+  });
+}
+
+function writeToSheetFetch(url) {
+  return new Promise((resolve, reject) => {
+    fetch(url, { redirect: 'follow' }).then(async (res) => {
+      debugLog('Fetch status: ' + res.status + ' ' + res.statusText);
+      const text = await res.text();
+      resolve(JSON.parse(text));
+    }).catch((err) => {
+      debugLog('Fetch fejl: ' + err.name + ': ' + err.message);
+      reject(err);
+    });
+  });
+}
+
+function writeToSheetJSONP(url) {
+  return new Promise((resolve, reject) => {
+    debugLog('Prøver script-tag (JSONP) fallback...');
+    const callbackName = 'sheetCallback_' + Date.now();
+    const scriptUrl = url + '&callback=' + callbackName;
+
+    window[callbackName] = (result) => {
+      debugLog('Script callback modtaget');
+      delete window[callbackName];
+      document.body.removeChild(script);
+      resolve(result);
+    };
+
+    const script = document.createElement('script');
+    script.src = scriptUrl;
+    script.onerror = () => {
+      debugLog('Script-tag fejl');
+      delete window[callbackName];
+      try { document.body.removeChild(script); } catch (x) {}
+      reject(new Error('JSONP fejlede'));
+    };
+    document.body.appendChild(script);
+
+    setTimeout(() => {
+      if (window[callbackName]) {
+        debugLog('Script timeout efter 15s');
+        delete window[callbackName];
+        try { document.body.removeChild(script); } catch (x) {}
+        reject(new Error('Timeout'));
+      }
+    }, 15000);
+  });
+}
+
 async function writeToSheet(rows) {
   const data = encodeURIComponent(JSON.stringify({ rows }));
   const url = SCRIPT_URL + '?data=' + data;
-
   debugLog('URL længde: ' + url.length);
-  debugLog('Request URL: ' + url.substring(0, 120) + '...');
 
   try {
-    debugLog('Sender GET request...');
-    const res = await fetch(url, { redirect: 'follow' });
-    debugLog('Response status: ' + res.status + ' ' + res.statusText);
-    debugLog('Response type: ' + res.type);
-    debugLog('Response URL: ' + res.url);
-    const text = await res.text();
-    debugLog('Response body: ' + text.substring(0, 200));
-    return JSON.parse(text);
-  } catch (err) {
-    debugLog('Fetch fejl: ' + err.name + ': ' + err.message);
-    debugLog('Stack: ' + err.stack);
+    return await writeToSheetXHR(url);
+  } catch (xhrErr) {
+    debugLog('XHR fejlede: ' + xhrErr.message);
+  }
 
-    debugLog('Prøver script-tag fallback...');
-    return new Promise((resolve, reject) => {
-      const callbackName = 'sheetCallback_' + Date.now();
-      const scriptUrl = url + '&callback=' + callbackName;
+  try {
+    return await writeToSheetFetch(url);
+  } catch (fetchErr) {
+    debugLog('Fetch fejlede: ' + fetchErr.message);
+  }
 
-      window[callbackName] = (result) => {
-        debugLog('Script callback modtaget');
-        delete window[callbackName];
-        document.body.removeChild(script);
-        resolve(result);
-      };
-
-      const script = document.createElement('script');
-      script.src = scriptUrl;
-      script.onerror = (e) => {
-        debugLog('Script-tag fejl: ' + JSON.stringify(e));
-        delete window[callbackName];
-        document.body.removeChild(script);
-        reject(new Error('Begge metoder fejlede'));
-      };
-      document.body.appendChild(script);
-
-      setTimeout(() => {
-        if (window[callbackName]) {
-          debugLog('Script timeout efter 15s');
-          delete window[callbackName];
-          try { document.body.removeChild(script); } catch(x) {}
-          reject(new Error('Timeout'));
-        }
-      }, 15000);
-    });
+  try {
+    return await writeToSheetJSONP(url);
+  } catch (jsonpErr) {
+    debugLog('JSONP fejlede: ' + jsonpErr.message);
+    throw new Error('Alle tre metoder (XHR, fetch, JSONP) fejlede');
   }
 }
 
@@ -674,6 +725,7 @@ function showLabelActions(hasIBNs) {
   const wrap = $('label-actions');
   if (!wrap) return;
   wrap.style.display = 'block';
+
   if (hasIBNs) {
     wrap.innerHTML = `
       <div class="card">
@@ -691,7 +743,7 @@ function showLabelActions(hasIBNs) {
         <p style="color:var(--muted);font-size:12px;margin-bottom:10px;">
           Apps Script returnerede ikke IBN'er endnu. Åbn LOG-E101 og kopier IBN-kolonnen for de netop indsatte rækker. Paste herunder (én IBN per linje, samme rækkefølge som tabellen):
         </p>
-        <textarea id="ibn-paste" rows="${Math.max(state.ingredients.length, 3)}" placeholder="B12&#10;B13&#10;..."></textarea>
+        <textarea id="ibn-paste" rows="${Math.max(state.ingredients.length, 3)}" placeholder="B16&#10;B17&#10;..."></textarea>
         <button class="btn" style="margin-top:8px;" onclick="useManualIBNs()">Brug IBN'er →</button>
       </div>`;
   }
@@ -758,7 +810,7 @@ if (state.apiKey) { showDelivery(); } else { showSetup(); }
 
 if ('serviceWorker' in navigator) {
   const swCode = `
-    const CACHE = 'grums-v10';
+    const CACHE = 'grums-v11';
     self.addEventListener('install', e => { self.skipWaiting(); });
     self.addEventListener('activate', e => { e.waitUntil(clients.claim()); });
     self.addEventListener('fetch', e => {
