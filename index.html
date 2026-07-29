@@ -241,6 +241,59 @@ function fileToBase64(file) {
   });
 }
 
+/**
+ * Skalerer billedet ned via canvas før upload. iPhone-fotos på 3-4 MB bliver
+ * til 5-6 MB base64, hvilket ofte får uploaden til at fejle med "Load failed"
+ * på mobilnet. 1600 px på længste led er rigeligt til at læse en følgeseddel.
+ */
+function resizeImage(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = function () {
+      try {
+        URL.revokeObjectURL(url);
+        let w = img.naturalWidth || img.width;
+        let h = img.naturalHeight || img.height;
+        if (!w || !h) { reject(new Error('Ukendt billedstørrelse')); return; }
+        const scale = Math.min(1, maxDim / Math.max(w, h));
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        const base64 = dataUrl.split(',')[1];
+        if (!base64 || base64.length < 100) { reject(new Error('Canvas gav tomt billede')); return; }
+        resolve({ data: base64, mediaType: 'image/jpeg' });
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = function () {
+      URL.revokeObjectURL(url);
+      reject(new Error('Kunne ikke indlæse billedet'));
+    };
+    img.src = url;
+  });
+}
+
+/** Skalerer ned hvis muligt, ellers sendes originalen. */
+async function prepareImage(file) {
+  try {
+    const r = await resizeImage(file, 1600, 0.82);
+    diag('Billede skaleret: ' + Math.round(file.size/1024) + ' KB → ' + Math.round(r.data.length/1024) + ' KB base64', 'ok');
+    return r;
+  } catch (e) {
+    diag('Kunne ikke skalere (' + e.message + ') - sender original', 'err');
+    return await fileToBase64(file);
+  }
+}
+
 async function callClaude(base64, mediaType, prompt) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -351,29 +404,71 @@ function writeToSheetJSONP(url) {
   });
 }
 
-async function writeToSheet(rows) {
-  const data = encodeURIComponent(JSON.stringify({ rows }));
-  const url = SCRIPT_URL + '?data=' + data;
-  debugLog('URL længde: ' + url.length);
+// Maks URL-længde. Browsere/Google afviser typisk omkring 2048 tegn, så vi
+// holder god margin og deler modtagelsen op i flere kald hvis nødvendigt.
+const MAX_URL_LEN = 1500;
 
+/**
+ * Bygger URL'en med et kompakt payload:
+ *   { d: dato, l: leverandør, r: [[type, produkt, mængde, antal, levbatch], ...] }
+ * Dato og leverandør sendes én gang i stedet for på hver række, og felterne
+ * er arrays uden nøglenavne - det halverer URL-længden.
+ */
+function buildSheetUrl(chunk, dato, leverandor) {
+  const payload = {
+    d: dato,
+    l: leverandor,
+    r: chunk.map(i => [i.type || '', i.produkt || '', i.maengde || '', i.antal || '1', i.batchnummer || ''])
+  };
+  return SCRIPT_URL + '?data=' + encodeURIComponent(JSON.stringify(payload));
+}
+
+async function writeChunk(url) {
   try {
     return await writeToSheetXHR(url);
   } catch (xhrErr) {
     debugLog('XHR fejlede: ' + xhrErr.message);
   }
-
   try {
     return await writeToSheetFetch(url);
   } catch (fetchErr) {
     debugLog('Fetch fejlede: ' + fetchErr.message);
   }
-
   try {
     return await writeToSheetJSONP(url);
   } catch (jsonpErr) {
     debugLog('JSONP fejlede: ' + jsonpErr.message);
     throw new Error('Alle tre metoder (XHR, fetch, JSONP) fejlede');
   }
+}
+
+async function writeToSheet(items, dato, leverandor) {
+  // Del op i bidder så ingen URL bliver for lang
+  const chunks = [];
+  let current = [];
+  for (const item of items) {
+    const candidate = current.concat([item]);
+    if (current.length > 0 && buildSheetUrl(candidate, dato, leverandor).length > MAX_URL_LEN) {
+      chunks.push(current);
+      current = [item];
+    } else {
+      current = candidate;
+    }
+  }
+  if (current.length > 0) chunks.push(current);
+
+  debugLog('Opdelt i ' + chunks.length + ' kald (' + items.length + ' rækker)');
+
+  let allIbns = [];
+  for (let c = 0; c < chunks.length; c++) {
+    const url = buildSheetUrl(chunks[c], dato, leverandor);
+    debugLog('Kald ' + (c + 1) + '/' + chunks.length + ' - ' + chunks[c].length + ' rækker, URL ' + url.length + ' tegn');
+    const result = await writeChunk(url);
+    if (Array.isArray(result?.ibns)) allIbns = allIbns.concat(result.ibns);
+    debugLog('Kald ' + (c + 1) + ' OK');
+  }
+
+  return { success: true, count: items.length, ibns: allIbns };
 }
 
 function debugLog(msg) {
@@ -454,7 +549,7 @@ async function handleDelivery(input) {
   diag('Spinner vist, starter base64...');
 
   try {
-    const { data, mediaType } = await fileToBase64(file);
+    const { data, mediaType } = await prepareImage(file);
     diag('Base64 klar (' + Math.round(data.length/1024) + ' KB), kalder Claude API...');
     const prompt = `Du ser en følgeseddel (delivery note/packing list) for ingredienser eller emballage.
 
@@ -676,7 +771,7 @@ async function handleLabel(input) {
   $('label-zone').innerHTML = `<div class="loading"><span class="spinner"></span> Læser batchnummer...<img src="${preview}" class="preview"></div>`;
 
   try {
-    const { data, mediaType } = await fileToBase64(file);
+    const { data, mediaType } = await prepareImage(file);
     const prompt = `Du ser en etiket/label på et produkt: "${name}".
 Udtræk batchnummer (batch number / lot number / parti nummer / charge / LOT) fra etiketten.
 Svar KUN med JSON (ingen markdown):
@@ -719,27 +814,6 @@ function showDone() {
 
     <div id="label-actions" style="display:none;margin-top:14px;"></div>
 
-    <details style="margin-top:14px;font-size:12px;color:var(--muted);">
-      <summary style="cursor:pointer;padding:6px 0;">⚙️ Apps Script — sådan returneres IBN'er</summary>
-      <p style="margin:8px 0;">Tilføj følgende i din <code>doGet</code> efter rækkerne er skrevet (juster <code>IBN_COL</code> til den kolonne hvor IBN står i LOG-E101):</p>
-      <pre style="background:var(--bg);padding:10px;border-radius:8px;overflow-x:auto;font-size:11px;line-height:1.5;">var startRow = sheet.getLastRow() - rows.length + 1;
-var IBN_COL = 1; // &lt;-- juster til IBN-kolonnen
-var ibns = sheet
-  .getRange(startRow, IBN_COL, rows.length, 1)
-  .getDisplayValues()
-  .map(function(r){ return r[0]; });
-
-// Hvis kaldt med ?callback=... (JSONP):
-if (callback) {
-  return ContentService
-    .createTextOutput(callback + '(' + JSON.stringify({success:true, ibns:ibns}) + ')')
-    .setMimeType(ContentService.MimeType.JAVASCRIPT);
-}
-return ContentService
-  .createTextOutput(JSON.stringify({success:true, ibns:ibns}))
-  .setMimeType(ContentService.MimeType.JSON);</pre>
-    </details>
-
     <div id="debug-box" class="card" style="margin-top:14px;font-family:'SF Mono','Courier New',monospace;font-size:11px;max-height:300px;overflow-y:auto;display:none;"></div>`;
 }
 
@@ -762,18 +836,10 @@ async function sendToSheets() {
   debugLog('Starter sheets-kald...');
   debugLog('Script URL: ' + SCRIPT_URL);
   try {
-    const rows = state.ingredients.map(ing => ({
-      dato: todayDDMMYYYY(),
-      type: ing.type || '',
-      produkt: ing.produkt || '',
-      maengde: ing.maengde || '',
-      antal: ing.antal || '1',
-      leverandor: state.deliveryInfo?.leverandor || '',
-      batchnummer: ing.batchnummer || ''
-    }));
-    debugLog('Antal rækker: ' + rows.length);
-    debugLog('Data: ' + JSON.stringify(rows).substring(0, 200));
-    const result = await writeToSheet(rows);
+    const dato = todayDDMMYYYY();
+    const leverandor = state.deliveryInfo?.leverandor || '';
+    debugLog('Antal rækker: ' + state.ingredients.length);
+    const result = await writeToSheet(state.ingredients, dato, leverandor);
     state.sheetWritten = true;
 
     // Forsøg at læse IBN'er fra svaret
@@ -823,7 +889,7 @@ function showLabelActions(hasIBNs) {
         <p style="color:var(--muted);font-size:12px;margin-bottom:10px;">
           Apps Script returnerede ikke IBN'er endnu. Åbn LOG-E101 og kopier IBN-kolonnen for de netop indsatte rækker. Paste herunder (én IBN per linje, samme rækkefølge som tabellen):
         </p>
-        <textarea id="ibn-paste" rows="${Math.max(state.ingredients.length, 3)}" placeholder="260501-01&#10;260501-02&#10;..."></textarea>
+        <textarea id="ibn-paste" rows="${Math.max(state.ingredients.length, 3)}" placeholder="B16&#10;B17&#10;..."></textarea>
         <button class="btn" style="margin-top:8px;" onclick="useManualIBNs()">Brug IBN'er →</button>
       </div>`;
   }
@@ -894,7 +960,7 @@ if (state.apiKey) { showDelivery(); } else { showSetup(); }
 // PWA Service Worker
 if ('serviceWorker' in navigator) {
   const swCode = `
-    const CACHE = 'grums-v12';
+    const CACHE = 'grums-v13';
     self.addEventListener('install', e => { self.skipWaiting(); });
     self.addEventListener('activate', e => { e.waitUntil(clients.claim()); });
     self.addEventListener('fetch', e => {
