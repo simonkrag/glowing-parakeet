@@ -960,7 +960,7 @@ if (state.apiKey) { showDelivery(); } else { showSetup(); }
 // PWA Service Worker
 if ('serviceWorker' in navigator) {
   const swCode = `
-    const CACHE = 'grums-v13';
+    const CACHE = 'grums-v14';
     self.addEventListener('install', e => { self.skipWaiting(); });
     self.addEventListener('activate', e => { e.waitUntil(clients.claim()); });
     self.addEventListener('fetch', e => {
